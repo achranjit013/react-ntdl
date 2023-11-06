@@ -1,13 +1,39 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
+import {
+  deleteData,
+  getData,
+  postData,
+  updateData,
+} from "./helper/axiosHelper";
 
 function App() {
-  const [form, setForm] = useState({});
+  const initialState = {
+    task: "",
+    hr: "",
+  };
+
+  const [form, setForm] = useState(initialState);
   const [taskList, setTaskList] = useState([]);
+  const [response, setResponse] = useState({});
+  const [idsToDelete, setIdsToDelete] = useState([]);
+  const [displayDelete, setDisplayDelete] = useState(false);
+
   const totalWeeklyHr = 24 * 7;
   const totalAllocatedHr = taskList.reduce((acc, item) => acc + +item.hr, 0);
 
+  useEffect(() => {
+    getTask();
+  }, []);
+
+  const getTask = async () => {
+    const data = await getData();
+    data.status === "success" && setTaskList(data.taskList);
+  };
+
   const handleOnChange = (e) => {
+    setResponse({});
+
     // name - attribute of the form
     // value - value of the input field
     // both name & value are the properties of 'target'
@@ -19,7 +45,7 @@ function App() {
     });
   };
 
-  const handleOnSubmit = (e) => {
+  const handleOnSubmit = async (e) => {
     e.preventDefault();
 
     if (totalAllocatedHr + +form.hr > totalWeeklyHr) {
@@ -32,53 +58,125 @@ function App() {
       );
     }
 
-    const obj = {
-      ...form,
-      type: "entry",
-      id: randomStr(),
-    };
+    // const obj = {
+    //   ...form,
+    //   type: "entry",
+    //   id: randomStr(),
+    // };
 
-    setTaskList([...taskList, obj]);
+    // setTaskList([...taskList, obj]);
+    // insted of doing setTaskList first, we now need to send data to db
+    const data = await postData(form);
+    setResponse(data);
+    setForm(initialState);
+    getTask();
   };
 
-  const handleOnDelete = (id) => {
+  const handleOnDelete = async (ids) => {
     if (window.confirm("Are you sure to delete?")) {
+      // calling api to delete data
+      const response = await deleteData({ ids: ids });
+      setResponse(response);
       // filter by id
-      const filteredArr = taskList.filter((item) => item.id !== id);
-      setTaskList(filteredArr);
+      // const filteredArr = taskList.filter((item) => item.id !== id);
+      // setTaskList(filteredArr);
+
+      // fetching api to display data
+      response?.status === "success" && getTask() && setIdsToDelete([]);
     }
   };
 
-  const switchTask = (id, type) => {
-    const badItem = taskList.map((item) => {
-      if (item.id === id) {
-        return {
-          ...item,
-          type,
-        };
-      }
+  // collect ids of selected tasks
+  const handleOnChecked = (e) => {
+    const { checked, value } = e.target;
 
-      return item;
-    });
+    // takeout from idsToDelete
+    const tempArr = idsToDelete.filter((item) => item !== value);
 
-    setTaskList(badItem);
-  };
-
-  const randomStr = () => {
-    const charLength = 6;
-    const str = "qwertyuioplkjhgfdsazxcvbnmQWERTYUIOPLKJHGFDSAZXCVBNM";
-    let id = "";
-
-    for (let i = 0; i < charLength; i++) {
-      const randNum = Math.round(Math.random() * (str.length - 1));
-      id += str[randNum];
+    if (checked) {
+      // push in
+      tempArr.push(value);
     }
 
-    return id;
+    if (tempArr.length > 0) {
+      setDisplayDelete(true);
+    } else {
+      setDisplayDelete(false);
+    }
+
+    setIdsToDelete(tempArr);
   };
+
+  const switchTask = async (obj) => {
+    // send update to server
+    const response = await updateData(obj);
+    setResponse(response);
+
+    // if success, fetch all data
+    response?.status === "success" && getTask();
+
+    // const badItem = taskList.map((item) => {
+    //   if (item.id === id) {
+    //     return {
+    //       ...item,
+    //       type,
+    //     };
+    //   }
+
+    //   return item;
+    // });
+
+    // setTaskList(badItem);
+  };
+
+  // const randomStr = () => {
+  //   const charLength = 6;
+  //   const str = "qwertyuioplkjhgfdsazxcvbnmQWERTYUIOPLKJHGFDSAZXCVBNM";
+  //   let id = "";
+
+  //   for (let i = 0; i < charLength; i++) {
+  //     const randNum = Math.round(Math.random() * (str.length - 1));
+  //     id += str[randNum];
+  //   }
+
+  //   return id;
+  // };
 
   const entryList = taskList.filter((item) => item.type === "entry");
   const badList = taskList.filter((item) => item.type === "bad");
+
+  const handleOnCheckedAll = (e) => {
+    const { checked, value } = e.target;
+
+    if (checked) {
+      // push in to entry / bad list
+
+      if (value === "entry") {
+        const entryIds = entryList.map((item) => item._id);
+        setIdsToDelete([...idsToDelete, ...entryIds]);
+      } else if (value === "bad") {
+        const badIds = badList.map((item) => item._id);
+        setIdsToDelete([...idsToDelete, ...badIds]);
+      }
+      setDisplayDelete(true);
+    } else {
+      // pop out from entry / bad list
+      if (value === "entry") {
+        const entryIds = entryList.map((item) => item._id);
+        const newIdsToDelete = idsToDelete.filter(
+          (item) => !entryIds.includes(item)
+        );
+        setIdsToDelete(newIdsToDelete);
+      } else if (value === "bad") {
+        const badIds = badList.map((item) => item._id);
+        const newIdsToDelete = idsToDelete.filter(
+          (item) => !badIds.includes(item)
+        );
+        setIdsToDelete(newIdsToDelete);
+      }
+      setDisplayDelete(false);
+    }
+  };
 
   return (
     <div className="wrapper">
@@ -89,6 +187,21 @@ function App() {
             <h1 className="text-center p-5">Not To Do List</h1>
           </div>
         </div>
+
+        {/* show the server message */}
+        {response?.message && (
+          <div
+            className={
+              response?.status === "success"
+                ? "alert alert-success"
+                : "alert alert-danger"
+            }
+          >
+            {response?.message}
+          </div>
+        )}
+
+        <br />
 
         {/* <!-- form area --> */}
         <form
@@ -104,6 +217,7 @@ function App() {
               className="form-control"
               id="taskName"
               name="task"
+              value={form.task}
               placeholder="Task name"
               required
               onChange={handleOnChange}
@@ -119,6 +233,7 @@ function App() {
               className="form-control"
               id="taskHr"
               name="hr"
+              value={form.hr}
               placeholder="Hour"
               required
               onChange={handleOnChange}
@@ -141,22 +256,33 @@ function App() {
             <hr />
 
             {/* <!-- task list / entry list --> */}
+            <input
+              type="checkbox"
+              className="form-check-input"
+              value="entry"
+              onChange={handleOnCheckedAll}
+            />
             <table className="table table-striped table-hover border">
               <tbody id="entry">
                 {entryList.map((item, i) => (
                   <tr key={i}>
                     <td>{i + 1}</td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        value={item._id}
+                        onChange={handleOnChecked}
+                        checked={idsToDelete.includes(item._id)}
+                      />
+                    </td>
                     <td>{item.task}</td>
                     <td>{item.hr}hr</td>
                     <td className="text-end">
                       <button
-                        onClick={() => handleOnDelete(item.id)}
-                        className="btn btn-danger m-1"
-                      >
-                        <i className="fa-solid fa-trash"></i>
-                      </button>
-                      <button
-                        onClick={() => switchTask(item.id, "bad")}
+                        onClick={() =>
+                          switchTask({ _id: item._id, type: "bad" })
+                        }
                         className="btn btn-success"
                       >
                         <i className="fa-solid fa-arrow-right"></i>
@@ -175,29 +301,41 @@ function App() {
           </div>
 
           {/* <!-- bad list --> */}
+
           <div className="col-md">
             <h3 className="text-center">Bad List</h3>
             <hr />
             {/* <!--  --> */}
+            <input
+              type="checkbox"
+              className="form-check-input"
+              value="bad"
+              onChange={handleOnCheckedAll}
+            />
             <table className="table table-striped table-hover border">
               <tbody id="bad">
                 {badList.map((item, i) => (
                   <tr key={i}>
                     <td>{i + 1}</td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        value={item._id}
+                        onChange={handleOnChecked}
+                        checked={idsToDelete.includes(item._id)}
+                      />
+                    </td>
                     <td>{item.task}</td>
                     <td>{item.hr}hr</td>
                     <td className="text-end g-2">
                       <button
-                        onClick={() => switchTask(item.id, "entry")}
+                        onClick={() =>
+                          switchTask({ _id: item._id, type: "entry" })
+                        }
                         className="btn btn-warning m-1"
                       >
                         <i className="fa-solid fa-arrow-left"></i>
-                      </button>
-                      <button
-                        onClick={() => handleOnDelete(item.id)}
-                        className="btn btn-danger"
-                      >
-                        <i className="fa-solid fa-trash"></i>
                       </button>
                     </td>
                   </tr>
@@ -214,6 +352,16 @@ function App() {
               hr
             </div>
           </div>
+
+          {displayDelete && (
+            <button
+              onClick={() => handleOnDelete(idsToDelete)}
+              className="btn btn-danger m-1"
+            >
+              <i className="fa-solid fa-trash"></i> You are about to delete{" "}
+              {idsToDelete.length} tasks.
+            </button>
+          )}
         </div>
       </div>
     </div>
